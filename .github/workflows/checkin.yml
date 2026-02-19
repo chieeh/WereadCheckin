@@ -36,9 +36,6 @@ jobs:
         echo "Read Time: $READ_TIME minutes"
         echo "Speed: $SPEED WPM"
         echo "Delay: $DELAY minutes"
-        
-    - name: Restore dependencies
-      run: dotnet restore
       
     - name: Run WeRead Check-in
       run: |
