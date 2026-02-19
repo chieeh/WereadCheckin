@@ -139,6 +139,7 @@ public class Commands
             return;
         }
         string token = tokenResult.Result.token;
+        Utils.SensitiveData.Add(token);
         Utils.Log($"Token: {token}");
 
         var chapterInfosResult = await wereadClient.PostFromAsync<ChapterInfosResponse>(

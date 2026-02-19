@@ -63,7 +63,7 @@ dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed> -c <configPath
 ### 2. 随机参数
 
 工作流生成随机值以模拟自然阅读：
-- **阅读时间**：30-60 分钟
+- **阅读时间**：5-10 分钟
 - **阅读速度**：120-180 词/分钟
 
 ## 3. 安全性

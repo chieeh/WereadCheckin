@@ -22,7 +22,7 @@ jobs:
     - name: Generate random parameters
       id: random
       run: |
-        # Generate random read time between 30-60 minutes
+        # Generate random read time between 5-10 minutes
         READ_TIME=$((5 + RANDOM % 10))
         # Generate random speed between 120-180 WPM
         SPEED=$((120 + RANDOM % 61))
