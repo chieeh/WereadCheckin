@@ -17,13 +17,6 @@ var app = ConsoleApp
         (_, services) =>
         {
             services.AddHttpClient(
-                "api",
-                client =>
-                {
-                    client.BaseAddress = new Uri("https://wereadtoolkit.zone.id/");
-                }
-            );
-            services.AddHttpClient(
                 "weread",
                 client =>
                 {
@@ -34,6 +27,13 @@ var app = ConsoleApp
                     client.DefaultRequestHeaders.Add("osver", Device.OsVer);
                     client.DefaultRequestHeaders.Add("channelid", Device.ChannelId);
                     client.DefaultRequestHeaders.Add("basever", Device.Appver);
+                }
+            );
+            services.AddHttpClient(
+                "api",
+                client =>
+                {
+                    client.BaseAddress = new Uri("https://wereadtoolkit.zone.id/");
                 }
             );
         }
@@ -67,11 +67,11 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        Account? account;
+        Account? account = null;
         if (configPath.StartsWith("http"))
         {
             var result = await httpClientFactory.CreateClient().GetFromAsync<Account>(configPath);
-            if (result?.StatusCode != HttpStatusCode.OK)
+            if (!result.IsSuccessStatusCode)
             {
                 Utils.Log("Failed to get account");
                 return;
@@ -81,11 +81,6 @@ public class Commands
         else if (File.Exists(configPath))
         {
             account = JsonSerializer.Deserialize<Account>(File.ReadAllText(configPath));
-        }
-        else
-        {
-            Utils.Log("Failed to get account");
-            return;
         }
         if (account is null)
         {
@@ -101,7 +96,7 @@ public class Commands
         var signatureResult = await apiClient.GetFromAsync<SignatureResponse>(
             $"/generation/signature?deviceId={account.DeviceId}"
         );
-        if (signatureResult is null || signatureResult.Result is null)
+        if (!signatureResult.IsSuccessStatusCode || signatureResult.Result is null)
         {
             Utils.Log("Failed to get signature");
             return;
@@ -125,7 +120,7 @@ public class Commands
                 wxToken = 0,
             }
         );
-        if (loginResult.StatusCode != HttpStatusCode.OK || loginResult.Result is null)
+        if (!loginResult.IsSuccessStatusCode || loginResult.Result?.accessToken is null)
         {
             Utils.Log("Failed to login");
             return;
@@ -133,7 +128,7 @@ public class Commands
         wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResult.Result.accessToken);
         wereadClient.DefaultRequestHeaders.Add("vid", loginResult.Result.vid.ToString());
         var tokenResult = await wereadClient.GetFromAsync<TokenResponse>("/config?token=1");
-        if (tokenResult is null || tokenResult.Result is null)
+        if (!tokenResult.IsSuccessStatusCode || tokenResult.Result?.token is null)
         {
             Utils.Log("Failed to get token");
             return;
@@ -146,7 +141,10 @@ public class Commands
             "/book/chapterInfos",
             new { bookIds = new string[] { bookId.ToString() }, synckeys = new int[] { 0 } }
         );
-        if (chapterInfosResult is null || chapterInfosResult.Result?.data?[0].updated is null)
+        if (
+            !chapterInfosResult.IsSuccessStatusCode
+            || chapterInfosResult.Result?.data?[0].updated is null
+        )
         {
             Utils.Log("Failed to get chapter infos");
             return;
@@ -156,7 +154,9 @@ public class Commands
         var getBookProgressResult = await wereadClient.GetFromAsync<GetBookProgressResponse>(
             $"/book/getProgress?bookId={bookId}"
         );
-        if (getBookProgressResult?.Result?.book is null)
+        if (
+            !getBookProgressResult.IsSuccessStatusCode || getBookProgressResult.Result?.book is null
+        )
         {
             Utils.Log("Failed to get book progress");
             return;
@@ -164,6 +164,7 @@ public class Commands
         var bookProgress = getBookProgressResult.Result.book;
         int readWord = readTime * speed;
         int chapterOffset = bookProgress.chapterOffset + readWord;
+        int progress = bookProgress.progress;
 
         int charpterIdx = bookProgress.chapterIdx;
         if (charpterIdx == 0)
@@ -177,6 +178,7 @@ public class Commands
             chapterUid = chapterInfos[i].chapterUid;
             if (chapterOffset < chapterInfos[i].wordCount)
             {
+                progress = chapterOffset * 100 / chapterInfos[i].wordCount;
                 break;
             }
             chapterOffset -= chapterInfos[i].wordCount;
@@ -189,7 +191,7 @@ public class Commands
             charpterIdx: charpterIdx,
             chapterOffset: chapterOffset,
             chapterUid: chapterUid,
-            progress: chapterOffset / chapterInfos[charpterIdx].wordCount,
+            progress: progress,
             readingTime: readTime * 60 + Random.Shared.Next(10, 50),
             resendReadingInfo: 0,
             summary: bookProgress.summary,
@@ -198,22 +200,21 @@ public class Commands
         signatureResult = await apiClient.GetFromAsync<SignatureResponse>(
             $"/generation/signature?token={token}"
         );
-        if (signatureResult is null || signatureResult.Result is null)
+        if (!signatureResult.IsSuccessStatusCode || signatureResult.Result is null)
         {
             Utils.Log("Failed to get signature");
             return;
         }
-        var signature = signatureResult.Result;
         var response = await wereadClient.PostFromAsync<SimpleResponse>(
             "/book/batchUploadProgress",
             new UploadBookProgressRequest(
                 books: [bookProgressInfo],
-                signatureResult.Result.Random,
-                signatureResult.Result.Signature,
-                signatureResult.Result.Timestamp
+                random: signatureResult.Result.Random,
+                signature: signatureResult.Result.Signature,
+                timestamp: signatureResult.Result.Timestamp
             )
         );
-        if (response?.Result is null || response.Result.succ != 1)
+        if (!response.IsSuccessStatusCode || response.Result?.succ != 1)
         {
             Utils.Log("Failed to update book progress");
             return;
@@ -225,8 +226,9 @@ public class Commands
 #region Models
 public class ClientResult<T>
 {
-    public HttpStatusCode StatusCode { get; set; }
-    public HttpResponseHeaders? Headers { get; set; }
+    public bool IsSuccessStatusCode { get; init; }
+    public HttpStatusCode StatusCode { get; init; }
+    public HttpResponseHeaders? Headers { get; init; }
     public T? Result { get; set; }
 }
 
@@ -256,6 +258,7 @@ public record BookProgressInfoResponse(
     int chapterOffset,
     string summary,
     int readingTime,
+    int progress,
     int synckey
 );
 
@@ -291,6 +294,7 @@ public static class HttpClientExtensions
         Utils.Log($"GET {response.RequestMessage?.RequestUri} {response.StatusCode}");
         var result = new ClientResult<T>()
         {
+            IsSuccessStatusCode = response.IsSuccessStatusCode,
             StatusCode = response.StatusCode,
             Headers = response.Headers,
         };
@@ -312,6 +316,7 @@ public static class HttpClientExtensions
         Utils.Log($"POST {response.RequestMessage?.RequestUri} {response.StatusCode}");
         var result = new ClientResult<T>()
         {
+            IsSuccessStatusCode = response.IsSuccessStatusCode,
             StatusCode = response.StatusCode,
             Headers = response.Headers,
         };
