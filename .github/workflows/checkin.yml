@@ -1,0 +1,54 @@
+name: WeRead Auto Check-in
+
+on:
+  schedule:
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    # Allow manual triggering
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+        
+    - name: Generate random parameters
+      id: random
+      run: |
+        # Generate random read time between 30-60 minutes
+        READ_TIME=$((30 + RANDOM % 31))
+        # Generate random speed between 120-180 WPM
+        SPEED=$((120 + RANDOM % 61))
+        DELAY=$((5 + RANDOM % 10))
+        
+        echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
+        echo "speed=$SPEED" >> $GITHUB_OUTPUT
+        echo "delay=$DELAY" >> $GITHUB_OUTPUT
+        
+        echo "Generated parameters:"
+        echo "Read Time: $READ_TIME minutes"
+        echo "Speed: $SPEED WPM"
+        echo "Delay: $DELAY minutes"
+        
+    - name: Restore dependencies
+      run: dotnet restore
+      
+    - name: Run WeRead Check-in
+      run: |
+        dotnet run app.cs -- checkin \
+          -i ${{ secrets.BOOK_ID }} \
+          -r ${{ steps.random.outputs.readTime }} \
+          -s ${{ steps.random.outputs.speed }} \
+          -c ${{ secrets.CONFIG_PATH }} \
+          -d ${{ steps.random.outputs.delay }}
+      env:
+        # Ensure any additional environment variables are available
+        DOTNET_NOLOGO: true
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
