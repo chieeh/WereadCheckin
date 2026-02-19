@@ -53,6 +53,7 @@ public class Commands
     /// <param name="stoppingToken">Cancellation token</param>
     /// <param name="delay">-d,Delay minutes before starting</param>
     /// <param name="configPath">-c, config file path or URL</param>
+    /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <returns></returns>
     public async Task Checkin(
         [FromServices] IHttpClientFactory httpClientFactory,
@@ -61,16 +62,18 @@ public class Commands
         int speed,
         CancellationToken stoppingToken,
         int delay = 0,
-        string configPath = "config.json"
+        string configPath = "config.json",
+        bool mask = false
     )
     {
+        Utils.Mask = mask;
         Account? account;
         if (configPath.StartsWith("http"))
         {
             var result = await httpClientFactory.CreateClient().GetFromAsync<Account>(configPath);
             if (result?.StatusCode != HttpStatusCode.OK)
             {
-                Console.WriteLine("Failed to get account");
+                Utils.Log("Failed to get account");
                 return;
             }
             account = result.Result;
@@ -81,24 +84,26 @@ public class Commands
         }
         else
         {
-            Console.WriteLine("Failed to get account");
+            Utils.Log("Failed to get account");
             return;
         }
         if (account is null)
         {
-            Console.WriteLine("Failed to get account");
+            Utils.Log("Failed to get account");
             return;
         }
-        Console.WriteLine($"Account: {account.Vid}");
+        Utils.SensitiveData.Add(account.RefreshToken);
+        Utils.SensitiveData.Add(account.DeviceId);
+        Utils.SensitiveData.Add(account.Vid.ToString());
+        Utils.Log($"Account: {account.Vid}");
         await Task.Delay(TimeSpan.FromMinutes(delay), stoppingToken);
         using var apiClient = httpClientFactory.CreateClient("api");
-        System.Console.WriteLine(apiClient.BaseAddress);
         var signatureResult = await apiClient.GetFromAsync<SignatureResponse>(
             $"/generation/signature?deviceId={account.DeviceId}"
         );
         if (signatureResult is null || signatureResult.Result is null)
         {
-            Console.WriteLine("Failed to get signature");
+            Utils.Log("Failed to get signature");
             return;
         }
 
@@ -122,7 +127,7 @@ public class Commands
         );
         if (loginResult.StatusCode != HttpStatusCode.OK || loginResult.Result is null)
         {
-            Console.WriteLine("Failed to login");
+            Utils.Log("Failed to login");
             return;
         }
         wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResult.Result.accessToken);
@@ -130,11 +135,11 @@ public class Commands
         var tokenResult = await wereadClient.GetFromAsync<TokenResponse>("/config?token=1");
         if (tokenResult is null || tokenResult.Result is null)
         {
-            Console.WriteLine("Failed to get token");
+            Utils.Log("Failed to get token");
             return;
         }
         string token = tokenResult.Result.token;
-        Console.WriteLine($"Token: {token}");
+        Utils.Log($"Token: {token}");
 
         var chapterInfosResult = await wereadClient.PostFromAsync<ChapterInfosResponse>(
             "/book/chapterInfos",
@@ -142,7 +147,7 @@ public class Commands
         );
         if (chapterInfosResult is null || chapterInfosResult.Result?.data?[0].updated is null)
         {
-            Console.WriteLine("Failed to get chapter infos");
+            Utils.Log("Failed to get chapter infos");
             return;
         }
         List<ChapterInfo> chapterInfos = chapterInfosResult.Result.data![0].updated!;
@@ -152,7 +157,7 @@ public class Commands
         );
         if (getBookProgressResult?.Result?.book is null)
         {
-            Console.WriteLine("Failed to get book progress");
+            Utils.Log("Failed to get book progress");
             return;
         }
         var bookProgress = getBookProgressResult.Result.book;
@@ -194,7 +199,7 @@ public class Commands
         );
         if (signatureResult is null || signatureResult.Result is null)
         {
-            Console.WriteLine("Failed to get signature");
+            Utils.Log("Failed to get signature");
             return;
         }
         var signature = signatureResult.Result;
@@ -209,10 +214,10 @@ public class Commands
         );
         if (response?.Result is null || response.Result.succ != 1)
         {
-            Console.WriteLine("Failed to update book progress");
+            Utils.Log("Failed to update book progress");
             return;
         }
-        Console.WriteLine("Book progress updated successfully");
+        Utils.Log("Book progress updated successfully");
     }
 }
 
@@ -282,9 +287,7 @@ public static class HttpClientExtensions
     public static async Task<ClientResult<T>> GetFromAsync<T>(this HttpClient client, string? uri)
     {
         var response = await client.GetAsync(uri);
-        System.Console.WriteLine(
-            $"GET {response.RequestMessage?.RequestUri} {response.StatusCode}"
-        );
+        Utils.Log($"GET {response.RequestMessage?.RequestUri} {response.StatusCode}");
         var result = new ClientResult<T>()
         {
             StatusCode = response.StatusCode,
@@ -305,9 +308,7 @@ public static class HttpClientExtensions
     )
     {
         var response = await client.PostAsJsonAsync(uri, content);
-        System.Console.WriteLine(
-            $"POST {response.RequestMessage?.RequestUri} {response.StatusCode}"
-        );
+        Utils.Log($"POST {response.RequestMessage?.RequestUri} {response.StatusCode}");
         var result = new ClientResult<T>()
         {
             StatusCode = response.StatusCode,
@@ -320,6 +321,27 @@ public static class HttpClientExtensions
         }
 
         return result;
+    }
+}
+
+public static class Utils
+{
+    public static bool Mask { get; set; } = false;
+    public static List<string> SensitiveData { get; set; } = new();
+
+    public static void Log(string message)
+    {
+        if (SensitiveData.Count == 0 || !Mask)
+        {
+            Console.WriteLine(message);
+            return;
+        }
+
+        foreach (var data in SensitiveData)
+        {
+            message = message.Replace(data, "**********");
+        }
+        Console.WriteLine(message);
     }
 }
 

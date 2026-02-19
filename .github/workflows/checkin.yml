@@ -23,7 +23,7 @@ jobs:
       id: random
       run: |
         # Generate random read time between 30-60 minutes
-        READ_TIME=$((30 + RANDOM % 31))
+        READ_TIME=$((5 + RANDOM % 10))
         # Generate random speed between 120-180 WPM
         SPEED=$((120 + RANDOM % 61))
         DELAY=$((5 + RANDOM % 10))
@@ -43,7 +43,8 @@ jobs:
           -i ${{ secrets.BOOK_ID }} \
           -r ${{ steps.random.outputs.readTime }} \
           -s ${{ steps.random.outputs.speed }} \
-          -c ${{ secrets.CONFIG_PATH }}
+          -c ${{ secrets.CONFIG_PATH }} \
+          -m 
       env:
         # Ensure any additional environment variables are available
         DOTNET_NOLOGO: true

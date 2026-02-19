@@ -41,6 +41,7 @@ dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed> -c <configPath
 - `-s, --speed`: 阅读速度，单位词/分钟（必需）
 - `-d, --delay`: 开始前延迟分钟数（默认：0）
 - `-c, --config-path`: 配置文件路径或 URL（默认：config.json）
+- `-m, --mask`: 是否隐藏敏感信息
 
 
 
@@ -56,7 +57,6 @@ dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed> -c <configPath
 |-------------|-------------|
 | `BOOK_ID` | 用于签到的微信读书书籍 ID |
 | `CONFIG_PATH` | 包含账户凭据的配置文件路径或 URL |
-也可以在密钥中添加 Vid、RefreshToken、DeviceId 避免Github Actions的日志中包含明文信息，降低被定位到具体账号的风险。
 
 工作流每天 8:00 UTC 自动运行，也可以手动触发。
 
