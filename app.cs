@@ -55,7 +55,7 @@ public class Commands
     /// <param name="configPath">-c, config file path or URL</param>
     /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <returns></returns>
-    public async Task Checkin(
+    public async Task<int> Checkin(
         [FromServices] IHttpClientFactory httpClientFactory,
         int bookId,
         int readTime,
@@ -74,7 +74,7 @@ public class Commands
             if (!result.IsSuccessStatusCode)
             {
                 Utils.Log("Failed to get account");
-                return;
+                return 1;
             }
             account = result.Result;
         }
@@ -85,7 +85,7 @@ public class Commands
         if (account is null)
         {
             Utils.Log("Failed to get account");
-            return;
+            return 1;
         }
         Utils.SensitiveData.Add(account.RefreshToken);
         Utils.SensitiveData.Add(account.DeviceId);
@@ -93,13 +93,14 @@ public class Commands
         Utils.Log($"Account: {account.Vid}");
         await Task.Delay(TimeSpan.FromMinutes(delay), stoppingToken);
         using var apiClient = httpClientFactory.CreateClient("api");
+        _ = await apiClient.GetFromAsync<object>("/");
         var signatureResult = await apiClient.GetFromAsync<SignatureResponse>(
             $"/generation/signature?deviceId={account.DeviceId}"
         );
         if (!signatureResult.IsSuccessStatusCode || signatureResult.Result is null)
         {
             Utils.Log("Failed to get signature");
-            return;
+            return 1;
         }
 
         using var wereadClient = httpClientFactory.CreateClient("weread");
@@ -123,7 +124,7 @@ public class Commands
         if (!loginResult.IsSuccessStatusCode || loginResult.Result?.accessToken is null)
         {
             Utils.Log("Failed to login");
-            return;
+            return 1;
         }
         wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResult.Result.accessToken);
         wereadClient.DefaultRequestHeaders.Add("vid", loginResult.Result.vid.ToString());
@@ -131,7 +132,7 @@ public class Commands
         if (!tokenResult.IsSuccessStatusCode || tokenResult.Result?.token is null)
         {
             Utils.Log("Failed to get token");
-            return;
+            return 1;
         }
         string token = tokenResult.Result.token;
         Utils.SensitiveData.Add(token);
@@ -147,7 +148,7 @@ public class Commands
         )
         {
             Utils.Log("Failed to get chapter infos");
-            return;
+            return 1;
         }
         List<ChapterInfo> chapterInfos = chapterInfosResult.Result.data![0].updated!;
 
@@ -159,7 +160,7 @@ public class Commands
         )
         {
             Utils.Log("Failed to get book progress");
-            return;
+            return 1;
         }
         var bookProgress = getBookProgressResult.Result.book;
         int readWord = readTime * speed;
@@ -203,7 +204,7 @@ public class Commands
         if (!signatureResult.IsSuccessStatusCode || signatureResult.Result is null)
         {
             Utils.Log("Failed to get signature");
-            return;
+            return 1;
         }
         var response = await wereadClient.PostFromAsync<SimpleResponse>(
             "/book/batchUploadProgress",
@@ -217,9 +218,10 @@ public class Commands
         if (!response.IsSuccessStatusCode || response.Result?.succ != 1)
         {
             Utils.Log("Failed to update book progress");
-            return;
+            return 1;
         }
         Utils.Log("Book progress updated successfully");
+        return 0;
     }
 }
 
