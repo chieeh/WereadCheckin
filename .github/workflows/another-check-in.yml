@@ -40,7 +40,7 @@ jobs:
           -i ${{ secrets.BOOK_ID }} \
           -r ${{ steps.random.outputs.readTime }} \
           -s ${{ steps.random.outputs.speed }} \
-          -c ${{ secrets.CONFIG_PATH }} \
+          -c ${{ secrets.CONFIG_PATH2 }} \
           -m 
       env:
         # Ensure any additional environment variables are available
