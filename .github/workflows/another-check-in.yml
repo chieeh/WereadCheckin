@@ -47,3 +47,11 @@ jobs:
         DOTNET_NOLOGO: true
         DOTNET_CLI_TELEMETRY_OPTOUT: 1
 
+    - name: Telegram Notify
+      uses: appleboy/telegram-action@v1.0.1
+      with:
+        to: ${{ secrets.CHAT_ID }} 
+        token: ${{ secrets.BOT_TOKEN }} 
+        message: ${{ job.status }}
+      
+
