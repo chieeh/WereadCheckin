@@ -64,6 +64,7 @@ jobs:
         path: artifacts
         pattern: wereread-checkin-*
         merge-multiple: true
+        skip-decompress: true
 
     - name: Get version from tag
       id: get_version
