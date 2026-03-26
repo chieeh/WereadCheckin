@@ -1,5 +1,8 @@
 name: Build and Release
 
+permissions:
+  contents: write
+
 on:
   push:
     branches:
@@ -74,5 +77,3 @@ jobs:
         generate_release_notes: true
         draft: false
         prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
