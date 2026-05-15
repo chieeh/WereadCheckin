@@ -8,17 +8,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Get Latest Release
-      id: latest_release
-      run: |
-        LATEST_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.assets[] | select(.name | contains("linux-x64")) | .browser_download_url')
-        echo "download_url=$LATEST_URL" >> $GITHUB_OUTPUT
-        echo "Latest release download URL: $LATEST_URL"
-
     - name: Download Release
       run: |
         mkdir -p bin
-        curl -L -o bin/app.zip "${{ steps.latest_release.outputs.download_url }}"
+        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/wereread-checkin-linux-x64.zip"
         unzip -o bin/app.zip -d bin
 
     - name: Generate random parameters
