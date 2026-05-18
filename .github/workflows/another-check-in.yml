@@ -52,7 +52,7 @@ jobs:
         message: |
           📚 微信读书签到完成
           
-          状态：${{ success() }}
+          状态：${{ job.status }}
           书籍 ID: ${{ secrets.BOOK_ID }}
           阅读时长：${{ steps.random.outputs.readTime }} 分钟
           阅读速度：${{ steps.random.outputs.speed }} 字/分钟
