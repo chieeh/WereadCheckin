@@ -151,22 +151,19 @@ public class Commands
             ChapterInfosResponse
         >(
             "/book/chapterInfos",
-            new ChapterInfosRequest(
-                bookIds: new string[] { bookId.ToString() },
-                synckeys: new int[] { 0 }
-            ),
+            new ChapterInfosRequest(bookIds: [bookId.ToString()], synckeys: [0]),
             SourceGenerationContext.Default.ChapterInfosRequest,
             SourceGenerationContext.Default.ChapterInfosResponse
         );
         if (
             !chapterInfosResult.IsSuccessStatusCode
-            || chapterInfosResult.Value?.data?[0].updated is null
+            || chapterInfosResult.Value?.data[0].updated is null
         )
         {
             Utils.Log("Failed to get chapter infos");
             return 1;
         }
-        List<ChapterInfo> chapterInfos = chapterInfosResult.Value.data![0].updated!;
+        List<ChapterInfo> chapterInfos = chapterInfosResult.Value.data[0].updated;
 
         var getBookProgressResult = await wereadClient.GetFromJsonAsync<GetBookProgressResponse>(
             $"/book/getProgress?bookId={bookId}",
@@ -244,6 +241,126 @@ public class Commands
         Utils.Log("Book progress updated successfully");
         return 0;
     }
+
+    /// <summary>
+    /// 领取每周奖励
+    /// </summary>
+    /// <param name="httpClientFactory">HTTP client factory</param>
+    /// <param name="stoppingToken">Cancellation token</param>
+    /// <param name="gainType">-t, 1 for 无限卡, 2 for 书币</param>
+    /// <param name="configPath">-c, config file path or URL</param>
+    /// <param name="mask">-m,Mask sensitive information in logs</param>
+    /// <returns></returns>
+    public async Task<int> Gain(
+        [FromServices] IHttpClientFactory httpClientFactory,
+        CancellationToken stoppingToken,
+        int gainType = 1,
+        string configPath = "config.json",
+        bool mask = false
+    )
+    {
+        Utils.Mask = mask;
+        Account? account = null;
+        if (configPath.StartsWith("http"))
+        {
+            using var client = httpClientFactory.CreateClient();
+            var rawContent = await client.GetStringAsync(configPath);
+            account = JsonSerializer.Deserialize(
+                rawContent,
+                SourceGenerationContext.Default.Account
+            );
+        }
+        else if (File.Exists(configPath))
+        {
+            account = JsonSerializer.Deserialize(
+                File.ReadAllText(configPath),
+                SourceGenerationContext.Default.Account
+            );
+        }
+        if (account is null)
+        {
+            Utils.Log("Failed to get account");
+            return 1;
+        }
+        Utils.SensitiveData.Add(account.RefreshToken);
+        Utils.SensitiveData.Add(account.DeviceId);
+        Utils.SensitiveData.Add(account.Vid.ToString());
+        Utils.Log($"Account Vid: {account.Vid}");
+        using var apiClient = httpClientFactory.CreateClient("api");
+        _ = await apiClient.GetAsync("/");
+        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
+            $"/generation/signature?deviceId={account.DeviceId}",
+            SourceGenerationContext.Default.SignatureResponse
+        );
+        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
+        {
+            Utils.Log("Failed to get signature");
+            return 1;
+        }
+
+        using var wereadClient = httpClientFactory.CreateClient("weread");
+        var loginContent = new LoginRequest(
+            deviceId: account.DeviceId,
+            deviceName: Device.Name,
+            inBackground: 0,
+            kickType: 1,
+            random: signatureResult.Value.Random,
+            refCgi: "",
+            refreshToken: account.RefreshToken,
+            signature: signatureResult.Value.Signature,
+            timestamp: signatureResult.Value.Timestamp,
+            trackId: "",
+            wxToken: 0
+        );
+        var loginResult = await wereadClient.PostAsJsonAsync<LoginRequest, LoginResponse>(
+            "/login",
+            loginContent,
+            SourceGenerationContext.Default.LoginRequest,
+            SourceGenerationContext.Default.LoginResponse
+        );
+        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
+        {
+            Utils.Log("Failed to login");
+            return 1;
+        }
+        var loginResponse = loginResult.Value;
+        wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResponse.accessToken);
+        wereadClient.DefaultRequestHeaders.Add("vid", loginResponse.vid.ToString());
+
+        var exchangeResult = await wereadClient.PostAsJsonAsync(
+            "/weekly/exchange",
+            new WeeklyExchangeRequest(0, 0, 0, 1),
+            SourceGenerationContext.Default.WeeklyExchangeRequest,
+            SourceGenerationContext.Default.WeeklyExchangeResponse
+        );
+        if (!exchangeResult.IsSuccessStatusCode || exchangeResult.Value is null)
+        {
+            Utils.Log("Failed to get exchange detail");
+            return 1;
+        }
+        List<ExchangeAward> awards =
+        [
+            .. exchangeResult.Value.readtimeAwards,
+            .. exchangeResult.Value.readdayAwards,
+            .. exchangeResult.Value.readgoalAwards,
+        ];
+        foreach (var award in awards)
+        {
+            if (award.awardStatus != 1)
+            {
+                continue;
+            }
+            await wereadClient.PostAsJsonAsync(
+                "/weekly/exchange",
+                new WeeklyExchangeRequest(award.awardLevelId, gainType, 1, 1),
+                SourceGenerationContext.Default.WeeklyExchangeRequest,
+                SourceGenerationContext.Default.WeeklyExchangeResponse
+            );
+            Utils.Log($"Gain {award.awardLevelId} {gainType}");
+        }
+        Utils.Log("Gain completed");
+        return 0;
+    }
 }
 
 #region Models
@@ -262,7 +379,12 @@ public class Commands
 [JsonSerializable(typeof(GetBookProgressResponse))]
 [JsonSerializable(typeof(BookProgressInfo))]
 [JsonSerializable(typeof(UploadBookProgressRequest))]
-[JsonSourceGenerationOptions(GenerationMode = JsonSourceGenerationMode.Default)]
+[JsonSerializable(typeof(WeeklyExchangeRequest))]
+[JsonSerializable(typeof(WeeklyExchangeResponse))]
+[JsonSourceGenerationOptions(
+    GenerationMode = JsonSourceGenerationMode.Default,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+)]
 internal partial class SourceGenerationContext : JsonSerializerContext { }
 
 public record Account(int Vid, string RefreshToken, string DeviceId);
@@ -332,6 +454,23 @@ public record UploadBookProgressRequest(
     int random,
     string signature,
     long timestamp
+);
+
+public record WeeklyExchangeRequest(
+    int awardLevelId,
+    int awardChoiceType,
+    int isExchangeAward,
+    int? isVisitReadGoal = null,
+    int unread = 1,
+    string pf = "wechat_wx-2001-android-100-weread"
+);
+
+public record ExchangeAward(int awardLevelId, int awardStatus);
+
+public record WeeklyExchangeResponse(
+    List<ExchangeAward> readtimeAwards,
+    List<ExchangeAward> readdayAwards,
+    List<ExchangeAward> readgoalAwards
 );
 
 #endregion
