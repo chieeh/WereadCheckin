@@ -1,12 +1,13 @@
-# 微信读书自动签到
+# 微信读书自动化工具
 
-一个 C# 控制台应用程序，实现一键上传微信读书阅读时间。
+一个 C# 控制台应用程序，实现一键上传微信读书阅读时间和领取每周奖励。
 
 ## 功能特性
 
 - 模拟自然阅读行为
 - 随意指定阅读时长
 - 一键签到，1s内完成阅读任务
+- 一键领取每周奖励
 
 ## 前提条件
 
@@ -31,24 +32,35 @@
 
 您可以从本仓库的 [Releases](https://github.com/chieeh/WereadCheckin/releases) 页面下载已编译的应用程序。目前支持以下平台：
 
-| 平台 | 文件名 |
-|------|--------|
-| Windows x64 | `wereread-checkin-win-x64.zip` |
-| Linux x64 | `wereread-checkin-linux-x64.zip` |
-| macOS x64 | `wereread-checkin-osx-x64.zip` |
+| 平台          | 文件名                              |
+|-------------|----------------------------------|
+| Windows x64 | `wereread-checkin-win-x64.zip`   |
+| Linux x64   | `wereread-checkin-linux-x64.zip` |
+| macOS x64   | `wereread-checkin-osx-x64.zip`   |
 
 下载后解压到任意目录，将配置文件 `config.json` 放在与可执行文件同一目录下，然后运行：
 
 **Windows:**
+
+签到：
 ```bash
 app.exe checkin -i <bookId> -r <readTime> -s <speed>
 ```
+领取阅读奖励：
+```bash
+app.exe gain
+```
 
 **Linux/macOS:**
+
+签到：
 ```bash
 ./app checkin -i <bookId> -r <readTime> -s <speed>
 ```
-
+领取阅读奖励：
+```bash
+./app gain
+```
 ### 方案2：使用 .NET 运行源码
 
 需先安装 .NET 10.0
@@ -62,8 +74,13 @@ cd WereadCheckin
 
 将配置文件 `config.json` 放在 `app.cs` 所在目录下，然后运行：
 
+签到：
 ```bash
 dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed>
+```
+领取奖励：
+```bash
+dotnet run app.cs -- gain
 ```
 
 ### 方案3： GitHub Actions自动运行
@@ -72,9 +89,9 @@ dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed>
 
 在您的 GitHub 仓库中添加以下密钥：
 
-| 密钥名称 | 描述 |
-|-------------|-------------|
-| `BOOK_ID` | 用于签到的微信读书书籍 ID |
+| 密钥名称          | 描述                 |
+|---------------|--------------------|
+| `BOOK_ID`     | 用于签到的微信读书书籍 ID     |
 | `CONFIG_PATH` | 包含账户凭据的配置文件路径或 URL |
 
 工作流每天 8:00 UTC 自动运行，也可以手动触发。
@@ -85,14 +102,24 @@ dotnet run app.cs -- checkin -i <bookId> -r <readTime> -s <speed>
 
 ## 参数说明
 
-| 参数 | 说明 | 必需 |
-|------|------|------|
-| `-i, --book-id` | 书籍 ID | 是 |
-| `-r, --read-time` | 阅读时间（分钟） | 是 |
-| `-s, --speed` | 阅读速度（词/分钟） | 是 |
-| `-d, --delay` | 开始前延迟分钟数 | 否（默认：0） |
+签到：
+
+| 参数                  | 说明          | 必需                |
+|---------------------|-------------|-------------------|
+| `-i, --book-id`     | 书籍 ID       | 是                 |
+| `-r, --read-time`   | 阅读时间（分钟）    | 是                 |
+| `-s, --speed`       | 阅读速度（词/分钟）  | 是                 |
+| `-d, --delay`       | 开始前延迟分钟数    | 否（默认：0）           |
 | `-c, --config-path` | 配置文件路径或 URL | 否（默认：config.json） |
-| `-m, --mask` | 是否隐藏敏感信息 | 否 |
+| `-m, --mask`        | 是否隐藏敏感信息    | 否                 |
+
+领取奖励：
+
+| 参数                  | 说明                | 必需                |
+|---------------------|-------------------|-------------------|
+ | `-t, --gain-type`   | 领取奖励类型，无限卡为1，书币为2 | 否（默认领取无限卡）        |
+| `-c, --config-path` | 配置文件路径或 URL       | 否（默认：config.json） |
+| `-m, --mask`        | 是否隐藏敏感信息          | 否                 |
 
 ## 依赖项
 
