@@ -10,41 +10,37 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Get Latest Release
-      id: latest_release
-      run: |
-        LATEST_URL=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r '.assets[] | select(.name | contains("linux-x64")) | .browser_download_url')
-        echo "download_url=$LATEST_URL" >> $GITHUB_OUTPUT
-        echo "Latest release download URL: $LATEST_URL"
-
     - name: Download Release
       run: |
         mkdir -p bin
-        curl -L -o bin/app.zip "${{ steps.latest_release.outputs.download_url }}"
+        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/wereread-checkin-linux-x64.zip"
         unzip -o bin/app.zip -d bin
+        chmod +x bin/app
 
     - name: Generate random parameters
       id: random
       run: |
         READ_TIME=$((5 + RANDOM % 10))
         SPEED=$((120 + RANDOM % 61))
-        DELAY=$((5 + RANDOM % 10))
 
         echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
         echo "speed=$SPEED" >> $GITHUB_OUTPUT
-        echo "delay=$DELAY" >> $GITHUB_OUTPUT
-
-        echo "Generated parameters:"
-        echo "Read Time: $READ_TIME minutes"
-        echo "Speed: $SPEED WPM"
-        echo "Delay: $DELAY minutes"
+        echo "day=$(date +%u)" >> $GITHUB_OUTPUT
 
     - name: Run WeRead Check-in
+      working-directory: bin
       run: |
-        cd bin && chmod +x app
         ./app checkin \
           -i ${{ secrets.BOOK_ID }} \
           -r ${{ steps.random.outputs.readTime }} \
           -s ${{ steps.random.outputs.speed }} \
           -c ${{ secrets.CONFIG_PATH }} \
+          -m
+        
+    - name: Run WeRead Gain
+      if: steps.random.outputs.day == '7'
+      working-directory: bin
+      run: |
+        ./app gain \
+          -c ${{ secrets.CONFIG_PATH2 }} \
           -m

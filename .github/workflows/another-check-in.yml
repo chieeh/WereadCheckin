@@ -13,34 +13,38 @@ jobs:
         mkdir -p bin
         curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/wereread-checkin-linux-x64.zip"
         unzip -o bin/app.zip -d bin
+        chmod +x bin/app
 
     - name: Generate random parameters
       id: random
       run: |
         READ_TIME=$((40 + RANDOM % 10))
         SPEED=$((50 + RANDOM % 60))
-        DELAY=$((5 + RANDOM % 10))
 
         echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
         echo "speed=$SPEED" >> $GITHUB_OUTPUT
-        echo "delay=$DELAY" >> $GITHUB_OUTPUT
-
-        echo "Generated parameters:"
-        echo "Read Time: $READ_TIME minutes"
-        echo "Speed: $SPEED WPM"
-        echo "Delay: $DELAY minutes"
+        echo "day=$(date +%u)" >> $GITHUB_OUTPUT
 
     - name: Run WeRead Check-in
+      working-directory: bin
       run: |
-        cd bin && chmod +x app
         ./app checkin \
           -i ${{ secrets.BOOK_ID }} \
           -r ${{ steps.random.outputs.readTime }} \
           -s ${{ steps.random.outputs.speed }} \
           -c ${{ secrets.CONFIG_PATH2 }} \
           -m
+        
+    - name: Run WeRead Gain
+      if: steps.random.outputs.day == '7'
+      working-directory: bin
+      run: |
+        ./app gain \
+          -c ${{ secrets.CONFIG_PATH2 }} \
+          -m
 
     - name: Telegram Notify
+      if: always()
       uses: appleboy/telegram-action@v1.0.1
       with:
         to: ${{ secrets.CHAT_ID }}
@@ -48,8 +52,7 @@ jobs:
         message: |
           📚 微信读书签到完成
           
-          状态：${{ job.status }}
+          状态：${{ success() }}
           书籍 ID: ${{ secrets.BOOK_ID }}
           阅读时长：${{ steps.random.outputs.readTime }} 分钟
           阅读速度：${{ steps.random.outputs.speed }} 字/分钟
-          延迟时间：${{ steps.random.outputs.delay }} 分钟
