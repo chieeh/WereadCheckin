@@ -42,5 +42,5 @@ jobs:
       working-directory: bin
       run: |
         ./app gain \
-          -c ${{ secrets.CONFIG_PATH2 }} \
+          -c ${{ secrets.CONFIG_PATH }} \
           -m
