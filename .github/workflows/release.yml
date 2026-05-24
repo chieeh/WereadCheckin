@@ -18,13 +18,13 @@ jobs:
         include:
           - os: ubuntu-latest
             rid: linux-x64
-            artifact-name: wereread-checkin-linux-x64
+            artifact-name: weread-checkin-linux-x64
           - os: windows-latest
             rid: win-x64
-            artifact-name: wereread-checkin-win-x64
+            artifact-name: weread-checkin-win-x64
           - os: macos-latest
             rid: osx-x64
-            artifact-name: wereread-checkin-osx-x64
+            artifact-name: weread-checkin-osx-x64
 
     steps:
     - name: Checkout code
@@ -62,7 +62,7 @@ jobs:
       uses: actions/download-artifact@v8
       with:
         path: artifacts
-        pattern: wereread-checkin-*
+        pattern: weread-checkin-*
         merge-multiple: true
         skip-decompress: true
 

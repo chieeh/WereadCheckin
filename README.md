@@ -32,11 +32,11 @@
 
 您可以从本仓库的 [Releases](https://github.com/chieeh/WereadCheckin/releases) 页面下载已编译的应用程序。目前支持以下平台：
 
-| 平台          | 文件名                              |
-|-------------|----------------------------------|
-| Windows x64 | `wereread-checkin-win-x64.zip`   |
-| Linux x64   | `wereread-checkin-linux-x64.zip` |
-| macOS x64   | `wereread-checkin-osx-x64.zip`   |
+| 平台          | 文件名                            |
+|-------------|--------------------------------|
+| Windows x64 | `weread-checkin-win-x64.zip`   |
+| Linux x64   | `weread-checkin-linux-x64.zip` |
+| macOS x64   | `weread-checkin-osx-x64.zip`   |
 
 下载后解压到任意目录，将配置文件 `config.json` 放在与可执行文件同一目录下，然后运行：
 

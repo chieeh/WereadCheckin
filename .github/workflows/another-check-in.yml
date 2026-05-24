@@ -11,7 +11,7 @@ jobs:
     - name: Download Release
       run: |
         mkdir -p bin
-        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/wereread-checkin-linux-x64.zip"
+        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/weread-checkin-linux-x64.zip"
         unzip -o bin/app.zip -d bin
         chmod +x bin/app
 
