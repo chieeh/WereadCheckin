@@ -2,6 +2,7 @@
 #:package Microsoft.Extensions.DependencyInjection@*
 #:package Microsoft.Extensions.Http@*
 
+using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -66,73 +67,18 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        Account? account = null;
-        if (configPath.StartsWith("http"))
-        {
-            using var client = httpClientFactory.CreateClient();
-            var rawContent = await client.GetStringAsync(configPath);
-            account = JsonSerializer.Deserialize(
-                rawContent,
-                SourceGenerationContext.Default.Account
-            );
-        }
-        else if (File.Exists(configPath))
-        {
-            account = JsonSerializer.Deserialize(
-                File.ReadAllText(configPath),
-                SourceGenerationContext.Default.Account
-            );
-        }
+        var account = await GetAccount(httpClientFactory, configPath);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        Utils.SensitiveData.Add(account.RefreshToken);
-        Utils.SensitiveData.Add(account.DeviceId);
-        Utils.SensitiveData.Add(account.Vid.ToString());
-        Utils.Log($"Account Vid: {account.Vid}");
-        await Task.Delay(TimeSpan.FromMinutes(delay), stoppingToken);
-        using var apiClient = httpClientFactory.CreateClient("api");
-        _ = await apiClient.GetAsync("/");
-        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
-            $"/generation/signature?deviceId={account.DeviceId}",
-            SourceGenerationContext.Default.SignatureResponse
-        );
-        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
+        using var wereadClient = await CreateWereadClient(httpClientFactory, account);
+        if (wereadClient is null)
         {
-            Utils.Log("Failed to get signature");
+            Utils.Log("Failed to create weread client");
             return 1;
         }
-
-        using var wereadClient = httpClientFactory.CreateClient("weread");
-        var loginContent = new LoginRequest(
-            deviceId: account.DeviceId,
-            deviceName: Device.Name,
-            inBackground: 0,
-            kickType: 1,
-            random: signatureResult.Value.Random,
-            refCgi: "",
-            refreshToken: account.RefreshToken,
-            signature: signatureResult.Value.Signature,
-            timestamp: signatureResult.Value.Timestamp,
-            trackId: "",
-            wxToken: 0
-        );
-        var loginResult = await wereadClient.PostAsJsonAsync<LoginRequest, LoginResponse>(
-            "/login",
-            loginContent,
-            SourceGenerationContext.Default.LoginRequest,
-            SourceGenerationContext.Default.LoginResponse
-        );
-        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
-        {
-            Utils.Log("Failed to login");
-            return 1;
-        }
-        var loginResponse = loginResult.Value;
-        wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResponse.accessToken);
-        wereadClient.DefaultRequestHeaders.Add("vid", loginResponse.vid.ToString());
         var tokenResult = await wereadClient.GetFromJsonAsync<TokenResponse>(
             "/config?token=1",
             SourceGenerationContext.Default.TokenResponse
@@ -210,7 +156,8 @@ public class Commands
             summary: bookProgress.summary,
             synckey: bookProgress.synckey
         );
-        signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
+        using var apiClient = httpClientFactory.CreateClient("api");
+        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
             $"/generation/signature?token={token}",
             SourceGenerationContext.Default.SignatureResponse
         );
@@ -260,72 +207,18 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        Account? account = null;
-        if (configPath.StartsWith("http"))
-        {
-            using var client = httpClientFactory.CreateClient();
-            var rawContent = await client.GetStringAsync(configPath);
-            account = JsonSerializer.Deserialize(
-                rawContent,
-                SourceGenerationContext.Default.Account
-            );
-        }
-        else if (File.Exists(configPath))
-        {
-            account = JsonSerializer.Deserialize(
-                File.ReadAllText(configPath),
-                SourceGenerationContext.Default.Account
-            );
-        }
+        var account = await GetAccount(httpClientFactory, configPath);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        Utils.SensitiveData.Add(account.RefreshToken);
-        Utils.SensitiveData.Add(account.DeviceId);
-        Utils.SensitiveData.Add(account.Vid.ToString());
-        Utils.Log($"Account Vid: {account.Vid}");
-        using var apiClient = httpClientFactory.CreateClient("api");
-        _ = await apiClient.GetAsync("/");
-        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
-            $"/generation/signature?deviceId={account.DeviceId}",
-            SourceGenerationContext.Default.SignatureResponse
-        );
-        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
+        using var wereadClient = await CreateWereadClient(httpClientFactory, account);
+        if (wereadClient is null)
         {
-            Utils.Log("Failed to get signature");
+            Utils.Log("Failed to create weread client");
             return 1;
         }
-
-        using var wereadClient = httpClientFactory.CreateClient("weread");
-        var loginContent = new LoginRequest(
-            deviceId: account.DeviceId,
-            deviceName: Device.Name,
-            inBackground: 0,
-            kickType: 1,
-            random: signatureResult.Value.Random,
-            refCgi: "",
-            refreshToken: account.RefreshToken,
-            signature: signatureResult.Value.Signature,
-            timestamp: signatureResult.Value.Timestamp,
-            trackId: "",
-            wxToken: 0
-        );
-        var loginResult = await wereadClient.PostAsJsonAsync<LoginRequest, LoginResponse>(
-            "/login",
-            loginContent,
-            SourceGenerationContext.Default.LoginRequest,
-            SourceGenerationContext.Default.LoginResponse
-        );
-        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
-        {
-            Utils.Log("Failed to login");
-            return 1;
-        }
-        var loginResponse = loginResult.Value;
-        wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResponse.accessToken);
-        wereadClient.DefaultRequestHeaders.Add("vid", loginResponse.vid.ToString());
 
         var exchangeResult = await wereadClient.PostAsJsonAsync(
             "/weekly/exchange",
@@ -360,6 +253,84 @@ public class Commands
         }
         Utils.Log("Gain completed");
         return 0;
+    }
+
+    private async Task<Account?> GetAccount(IHttpClientFactory httpClientFactory, string configPath)
+    {
+        Account? account = null;
+        if (configPath.StartsWith("http"))
+        {
+            using var client = httpClientFactory.CreateClient();
+            var rawContent = await client.GetStringAsync(configPath);
+            account = JsonSerializer.Deserialize(
+                rawContent,
+                SourceGenerationContext.Default.Account
+            );
+        }
+        else if (File.Exists(configPath))
+        {
+            account = JsonSerializer.Deserialize(
+                await File.ReadAllTextAsync(configPath),
+                SourceGenerationContext.Default.Account
+            );
+        }
+        if (account is null)
+        {
+            Utils.Log("Failed to get account");
+            return null;
+        }
+        Utils.SensitiveData.Add(account.RefreshToken);
+        Utils.SensitiveData.Add(account.DeviceId);
+        Utils.SensitiveData.Add(account.Vid.ToString());
+        Utils.Log($"Account Vid: {account.Vid}");
+        return account;
+    }
+
+    private async Task<HttpClient?> CreateWereadClient(
+        IHttpClientFactory httpClientFactory,
+        Account account
+    )
+    {
+        using var apiClient = httpClientFactory.CreateClient("api");
+        _ = await apiClient.GetAsync("/");
+        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
+            $"/generation/signature?deviceId={account.DeviceId}",
+            SourceGenerationContext.Default.SignatureResponse
+        );
+        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
+        {
+            Utils.Log("Failed to get signature");
+            return null;
+        }
+        var wereadClient = httpClientFactory.CreateClient("weread");
+        var loginContent = new LoginRequest(
+            deviceId: account.DeviceId,
+            deviceName: Device.Name,
+            inBackground: 0,
+            kickType: 1,
+            random: signatureResult.Value.Random,
+            refCgi: "",
+            refreshToken: account.RefreshToken,
+            signature: signatureResult.Value.Signature,
+            timestamp: signatureResult.Value.Timestamp,
+            trackId: "",
+            wxToken: 0
+        );
+        var loginResult = await wereadClient.PostAsJsonAsync<LoginRequest, LoginResponse>(
+            "/login",
+            loginContent,
+            SourceGenerationContext.Default.LoginRequest,
+            SourceGenerationContext.Default.LoginResponse
+        );
+        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
+        {
+            Utils.Log("Failed to login");
+            return null;
+        }
+        var loginResponse = loginResult.Value;
+        wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResponse.accessToken);
+        wereadClient.DefaultRequestHeaders.Add("vid", loginResponse.vid.ToString());
+        return wereadClient;
     }
 }
 
