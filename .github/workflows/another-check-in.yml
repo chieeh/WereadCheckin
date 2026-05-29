@@ -26,9 +26,11 @@ jobs:
         echo "day=$(date +%u)" >> $GITHUB_OUTPUT
 
     - name: Run WeRead Check-in
-      working-directory: bin
-      run: |
-        ./app checkin \
+      uses: nick-fields/retry@v4.0.0
+      with:
+       max_attempts: 3
+       command: |
+        cd bin && ./app checkin \
           -i ${{ secrets.BOOK_ID }} \
           -r ${{ steps.random.outputs.readTime }} \
           -s ${{ steps.random.outputs.speed }} \
