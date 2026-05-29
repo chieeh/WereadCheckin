@@ -28,6 +28,7 @@ jobs:
     - name: Run WeRead Check-in
       uses: nick-fields/retry@v4.0.0
       with:
+       timeout_minutes: 10
        max_attempts: 3
        command: |
         cd bin && ./app checkin \
