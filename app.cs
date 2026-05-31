@@ -2,7 +2,6 @@
 #:package Microsoft.Extensions.DependencyInjection@*
 #:package Microsoft.Extensions.Http@*
 
-using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.Json;
 using System.Text.Encodings.Web;
 using System.Text.Json;
@@ -56,37 +55,36 @@ public class Commands
     /// <param name="bookId">-i,Book ID</param>
     /// <param name="readTime">-r,Read time in minutes</param>
     /// <param name="speed">-s,Read speed in words per minute</param>
-    /// <param name="stoppingToken">Cancellation token</param>
-    /// <param name="delay">-d,Delay minutes before starting</param>
     /// <param name="configPath">-c, config file path or URL</param>
     /// <param name="mask">-m,Mask sensitive information in logs</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns></returns>
     public async Task<int> Checkin(
         int bookId,
         int readTime,
         int speed,
-        CancellationToken stoppingToken,
-        int delay = 0,
         string configPath = "config.json",
-        bool mask = false
+        bool mask = false,
+        CancellationToken cancellationToken = default
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(configPath);
+        var account = await GetAccount(configPath, cancellationToken);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        using var wereadClient = await CreateWereadClient(account);
+        using var wereadClient = await CreateWereadClient(account, cancellationToken);
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
             return 1;
         }
-        var tokenResult = await wereadClient.GetFromJsonAsync<TokenResponse>(
+        var tokenResult = await wereadClient.GetFromJsonAsync(
             "/config?token=1",
-            SourceGenerationContext.Default.TokenResponse
+            SourceGenerationContext.Default.TokenResponse,
+            cancellationToken
         );
         if (!tokenResult.IsSuccessStatusCode || tokenResult.Value?.token is null)
         {
@@ -97,14 +95,12 @@ public class Commands
         Utils.SensitiveData.Add(token);
         Utils.Log($"Token: {token}");
 
-        var chapterInfosResult = await wereadClient.PostAsJsonAsync<
-            ChapterInfosRequest,
-            ChapterInfosResponse
-        >(
+        var chapterInfosResult = await wereadClient.PostAsJsonAsync(
             "/book/chapterInfos",
             new ChapterInfosRequest(bookIds: [bookId.ToString()], synckeys: [0]),
             SourceGenerationContext.Default.ChapterInfosRequest,
-            SourceGenerationContext.Default.ChapterInfosResponse
+            SourceGenerationContext.Default.ChapterInfosResponse,
+            cancellationToken
         );
         if (
             !chapterInfosResult.IsSuccessStatusCode
@@ -116,9 +112,10 @@ public class Commands
         }
         List<ChapterInfo> chapterInfos = chapterInfosResult.Value.data[0].updated;
 
-        var getBookProgressResult = await wereadClient.GetFromJsonAsync<GetBookProgressResponse>(
+        var getBookProgressResult = await wereadClient.GetFromJsonAsync(
             $"/book/getProgress?bookId={bookId}",
-            SourceGenerationContext.Default.GetBookProgressResponse
+            SourceGenerationContext.Default.GetBookProgressResponse,
+            cancellationToken
         );
         if (!getBookProgressResult.IsSuccessStatusCode || getBookProgressResult.Value?.book is null)
         {
@@ -162,19 +159,17 @@ public class Commands
             synckey: bookProgress.synckey
         );
         using var apiClient = _httpClientFactory.CreateClient("api");
-        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
+        var signatureResult = await apiClient.GetFromJsonAsync(
             $"/generation/signature?token={token}",
-            SourceGenerationContext.Default.SignatureResponse
+            SourceGenerationContext.Default.SignatureResponse,
+            cancellationToken
         );
         if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
         {
             Utils.Log("Failed to get signature");
             return 1;
         }
-        var response = await wereadClient.PostAsJsonAsync<
-            UploadBookProgressRequest,
-            SimpleResponse
-        >(
+        var response = await wereadClient.PostAsJsonAsync(
             "/book/batchUploadProgress",
             new UploadBookProgressRequest(
                 books: [bookProgressInfo],
@@ -183,7 +178,8 @@ public class Commands
                 timestamp: signatureResult.Value.Timestamp
             ),
             SourceGenerationContext.Default.UploadBookProgressRequest,
-            SourceGenerationContext.Default.SimpleResponse
+            SourceGenerationContext.Default.SimpleResponse,
+            cancellationToken
         );
         if (!response.IsSuccessStatusCode || response.Value?.succ != 1)
         {
@@ -197,26 +193,26 @@ public class Commands
     /// <summary>
     /// 领取每周奖励
     /// </summary>
-    /// <param name="stoppingToken">Cancellation token</param>
     /// <param name="gainType">-t, 1 for 无限卡, 2 for 书币</param>
     /// <param name="configPath">-c, config file path or URL</param>
     /// <param name="mask">-m,Mask sensitive information in logs</param>
+    /// <param name="cancellationToken">Cancellation token</param>
     /// <returns></returns>
     public async Task<int> Gain(
-        CancellationToken stoppingToken,
         int gainType = 1,
         string configPath = "config.json",
-        bool mask = false
+        bool mask = false,
+        CancellationToken cancellationToken = default
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(configPath);
+        var account = await GetAccount(configPath, cancellationToken);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        using var wereadClient = await CreateWereadClient(account);
+        using var wereadClient = await CreateWereadClient(account, cancellationToken);
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
@@ -227,7 +223,8 @@ public class Commands
             "/weekly/exchange",
             new WeeklyExchangeRequest(0, 0, 0, 1),
             SourceGenerationContext.Default.WeeklyExchangeRequest,
-            SourceGenerationContext.Default.WeeklyExchangeResponse
+            SourceGenerationContext.Default.WeeklyExchangeResponse,
+            cancellationToken
         );
         if (!exchangeResult.IsSuccessStatusCode || exchangeResult.Value is null)
         {
@@ -250,7 +247,8 @@ public class Commands
                 "/weekly/exchange",
                 new WeeklyExchangeRequest(award.awardLevelId, gainType, 1, 1),
                 SourceGenerationContext.Default.WeeklyExchangeRequest,
-                SourceGenerationContext.Default.WeeklyExchangeResponse
+                SourceGenerationContext.Default.WeeklyExchangeResponse,
+                cancellationToken
             );
             Utils.Log($"Gain {award.awardLevelId} {gainType}");
         }
@@ -258,13 +256,16 @@ public class Commands
         return 0;
     }
 
-    private async Task<Account?> GetAccount(string configPath)
+    private async Task<Account?> GetAccount(
+        string configPath,
+        CancellationToken stoppingToken = default
+    )
     {
         Account? account = null;
         if (configPath.StartsWith("http"))
         {
             using var client = _httpClientFactory.CreateClient();
-            var rawContent = await client.GetStringAsync(configPath);
+            var rawContent = await client.GetStringAsync(configPath, stoppingToken);
             account = JsonSerializer.Deserialize(
                 rawContent,
                 SourceGenerationContext.Default.Account
@@ -273,7 +274,7 @@ public class Commands
         else if (File.Exists(configPath))
         {
             account = JsonSerializer.Deserialize(
-                await File.ReadAllTextAsync(configPath),
+                await File.ReadAllTextAsync(configPath, stoppingToken),
                 SourceGenerationContext.Default.Account
             );
         }
@@ -289,13 +290,17 @@ public class Commands
         return account;
     }
 
-    private async Task<HttpClient?> CreateWereadClient(Account account)
+    private async Task<HttpClient?> CreateWereadClient(
+        Account account,
+        CancellationToken cancellationToken = default
+    )
     {
         using var apiClient = _httpClientFactory.CreateClient("api");
-        _ = await apiClient.GetAsync("/");
-        var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
+        _ = await apiClient.GetAsync("/", cancellationToken);
+        var signatureResult = await apiClient.GetFromJsonAsync(
             $"/generation/signature?deviceId={account.DeviceId}",
-            SourceGenerationContext.Default.SignatureResponse
+            SourceGenerationContext.Default.SignatureResponse,
+            cancellationToken
         );
         if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
         {
@@ -306,21 +311,17 @@ public class Commands
         var loginContent = new LoginRequest(
             deviceId: account.DeviceId,
             deviceName: Device.Name,
-            inBackground: 0,
-            kickType: 1,
             random: signatureResult.Value.Random,
-            refCgi: "",
             refreshToken: account.RefreshToken,
             signature: signatureResult.Value.Signature,
-            timestamp: signatureResult.Value.Timestamp,
-            trackId: "",
-            wxToken: 0
+            timestamp: signatureResult.Value.Timestamp
         );
-        var loginResult = await wereadClient.PostAsJsonAsync<LoginRequest, LoginResponse>(
+        var loginResult = await wereadClient.PostAsJsonAsync(
             "/login",
             loginContent,
             SourceGenerationContext.Default.LoginRequest,
-            SourceGenerationContext.Default.LoginResponse
+            SourceGenerationContext.Default.LoginResponse,
+            cancellationToken
         );
         if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
         {
@@ -369,15 +370,15 @@ public record LoginResponse(int vid, string accessToken, string? refreshToken);
 public record LoginRequest(
     string deviceId,
     string deviceName,
-    int inBackground,
-    int kickType,
     int random,
-    string refCgi,
     string refreshToken,
     string signature,
     long timestamp,
-    string trackId,
-    int wxToken
+    int inBackground = 0,
+    int kickType = 1,
+    string refCgi = "",
+    string trackId = "",
+    int wxToken = 0
 );
 
 public record TokenResponse(string token, long timestamp);
@@ -451,15 +452,19 @@ public static class HttpClientExtensions
     public static async Task<HttpResponseMessageWrapper<TResponse>> GetFromJsonAsync<TResponse>(
         this HttpClient client,
         string? uri,
-        JsonTypeInfo<TResponse> jsonTypeInfo
+        JsonTypeInfo<TResponse> jsonTypeInfo,
+        CancellationToken cancellationToken = default
     )
     {
-        var response = await client.GetAsync(uri);
+        var response = await client.GetAsync(uri, cancellationToken);
         Utils.Log($"GET {response.RequestMessage?.RequestUri} {response.StatusCode}");
         TResponse? result = default;
         if (response.IsSuccessStatusCode)
         {
-            result = await response.Content.ReadFromJsonAsync(jsonTypeInfo);
+            result = await response.Content.ReadFromJsonAsync(
+                jsonTypeInfo,
+                cancellationToken: cancellationToken
+            );
         }
         return new HttpResponseMessageWrapper<TResponse>(response, result);
     }
@@ -472,7 +477,8 @@ public static class HttpClientExtensions
         string? uri,
         TRequest content,
         JsonTypeInfo<TRequest> requestTypeInfo,
-        JsonTypeInfo<TResponse> responseTypeInfo
+        JsonTypeInfo<TResponse> responseTypeInfo,
+        CancellationToken cancellationToken = default
     )
     {
         using var stream = new MemoryStream();
@@ -489,12 +495,15 @@ public static class HttpClientExtensions
         httpContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(
             "application/json"
         );
-        var response = await client.PostAsync(uri, httpContent);
+        var response = await client.PostAsync(uri, httpContent, cancellationToken);
         Utils.Log($"POST {response.RequestMessage?.RequestUri} {response.StatusCode}");
         TResponse? result = default;
         if (response.IsSuccessStatusCode)
         {
-            result = await response.Content.ReadFromJsonAsync(responseTypeInfo);
+            result = await response.Content.ReadFromJsonAsync(
+                responseTypeInfo,
+                cancellationToken: cancellationToken
+            );
         }
         return new HttpResponseMessageWrapper<TResponse>(response, result);
     }
