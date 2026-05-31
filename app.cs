@@ -69,10 +69,12 @@ public class Commands
     /// <summary>
     /// 刷新账户凭证
     /// </summary>
+    /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns></returns>
-    public async Task<int> Refresh(CancellationToken cancellationToken = default)
+    public async Task<int> Refresh(bool mask = false, CancellationToken cancellationToken = default)
     {
+        Utils.Mask = mask;
         using var apiClient = _httpClientFactory.CreateClient("api");
         _ = await apiClient.GetAsync("/", cancellationToken);
         var signatureResult = await apiClient.GetFromJsonAsync(
