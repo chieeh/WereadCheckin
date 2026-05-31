@@ -43,10 +43,16 @@ app.Run(args);
 
 public class Commands
 {
+    private readonly IHttpClientFactory _httpClientFactory;
+
+    public Commands(IHttpClientFactory httpClientFactory)
+    {
+        _httpClientFactory = httpClientFactory;
+    }
+
     /// <summary>
     /// 签到
     /// </summary>
-    /// <param name="httpClientFactory">HTTP client factory</param>
     /// <param name="bookId">-i,Book ID</param>
     /// <param name="readTime">-r,Read time in minutes</param>
     /// <param name="speed">-s,Read speed in words per minute</param>
@@ -56,7 +62,6 @@ public class Commands
     /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <returns></returns>
     public async Task<int> Checkin(
-        [FromServices] IHttpClientFactory httpClientFactory,
         int bookId,
         int readTime,
         int speed,
@@ -67,13 +72,13 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(httpClientFactory, configPath);
+        var account = await GetAccount(configPath);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        using var wereadClient = await CreateWereadClient(httpClientFactory, account);
+        using var wereadClient = await CreateWereadClient(account);
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
@@ -156,7 +161,7 @@ public class Commands
             summary: bookProgress.summary,
             synckey: bookProgress.synckey
         );
-        using var apiClient = httpClientFactory.CreateClient("api");
+        using var apiClient = _httpClientFactory.CreateClient("api");
         var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
             $"/generation/signature?token={token}",
             SourceGenerationContext.Default.SignatureResponse
@@ -192,14 +197,12 @@ public class Commands
     /// <summary>
     /// 领取每周奖励
     /// </summary>
-    /// <param name="httpClientFactory">HTTP client factory</param>
     /// <param name="stoppingToken">Cancellation token</param>
     /// <param name="gainType">-t, 1 for 无限卡, 2 for 书币</param>
     /// <param name="configPath">-c, config file path or URL</param>
     /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <returns></returns>
     public async Task<int> Gain(
-        [FromServices] IHttpClientFactory httpClientFactory,
         CancellationToken stoppingToken,
         int gainType = 1,
         string configPath = "config.json",
@@ -207,13 +210,13 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(httpClientFactory, configPath);
+        var account = await GetAccount(configPath);
         if (account is null)
         {
             Utils.Log("Failed to get account");
             return 1;
         }
-        using var wereadClient = await CreateWereadClient(httpClientFactory, account);
+        using var wereadClient = await CreateWereadClient(account);
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
@@ -255,12 +258,12 @@ public class Commands
         return 0;
     }
 
-    private async Task<Account?> GetAccount(IHttpClientFactory httpClientFactory, string configPath)
+    private async Task<Account?> GetAccount(string configPath)
     {
         Account? account = null;
         if (configPath.StartsWith("http"))
         {
-            using var client = httpClientFactory.CreateClient();
+            using var client = _httpClientFactory.CreateClient();
             var rawContent = await client.GetStringAsync(configPath);
             account = JsonSerializer.Deserialize(
                 rawContent,
@@ -286,12 +289,9 @@ public class Commands
         return account;
     }
 
-    private async Task<HttpClient?> CreateWereadClient(
-        IHttpClientFactory httpClientFactory,
-        Account account
-    )
+    private async Task<HttpClient?> CreateWereadClient(Account account)
     {
-        using var apiClient = httpClientFactory.CreateClient("api");
+        using var apiClient = _httpClientFactory.CreateClient("api");
         _ = await apiClient.GetAsync("/");
         var signatureResult = await apiClient.GetFromJsonAsync<SignatureResponse>(
             $"/generation/signature?deviceId={account.DeviceId}",
@@ -302,7 +302,7 @@ public class Commands
             Utils.Log("Failed to get signature");
             return null;
         }
-        var wereadClient = httpClientFactory.CreateClient("weread");
+        var wereadClient = _httpClientFactory.CreateClient("weread");
         var loginContent = new LoginRequest(
             deviceId: account.DeviceId,
             deviceName: Device.Name,
