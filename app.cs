@@ -42,11 +42,80 @@ app.Run(args);
 
 public class Commands
 {
+    private const string _accountFile = "account.json";
     private readonly IHttpClientFactory _httpClientFactory;
+    private Account? _account;
 
     public Commands(IHttpClientFactory httpClientFactory)
     {
         _httpClientFactory = httpClientFactory;
+        if (!File.Exists(_accountFile))
+        {
+            throw new FileNotFoundException($"{_accountFile} not found");
+        }
+        _account = JsonSerializer.Deserialize(
+            File.ReadAllText(_accountFile),
+            SourceGenerationContext.Default.Account
+        );
+        if (_account?.RefreshToken is null)
+        {
+            throw new InvalidOperationException("RefreshToken is null");
+        }
+        Utils.SensitiveData.Add(_account.RefreshToken);
+        Utils.SensitiveData.Add(_account.DeviceId);
+        Utils.SensitiveData.Add(_account.Vid.ToString());
+    }
+
+    /// <summary>
+    /// 刷新账户凭证
+    /// </summary>
+    /// <param name="cancellationToken">Cancellation token</param>
+    /// <returns></returns>
+    public async Task<int> Refresh(CancellationToken cancellationToken = default)
+    {
+        using var apiClient = _httpClientFactory.CreateClient("api");
+        _ = await apiClient.GetAsync("/", cancellationToken);
+        var signatureResult = await apiClient.GetFromJsonAsync(
+            $"/generation/signature?deviceId={_account!.DeviceId}",
+            SourceGenerationContext.Default.SignatureResponse,
+            cancellationToken
+        );
+        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
+        {
+            Utils.Log("Failed to get signature");
+            return 1;
+        }
+        var wereadClient = _httpClientFactory.CreateClient("weread");
+        var loginContent = new LoginRequest(
+            deviceId: _account!.DeviceId,
+            deviceName: Device.Name,
+            random: signatureResult.Value.Random,
+            refreshToken: _account.RefreshToken,
+            signature: signatureResult.Value.Signature,
+            timestamp: signatureResult.Value.Timestamp
+        );
+        var loginResult = await wereadClient.PostAsJsonAsync(
+            "/login",
+            loginContent,
+            SourceGenerationContext.Default.LoginRequest,
+            SourceGenerationContext.Default.LoginResponse,
+            cancellationToken
+        );
+        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
+        {
+            Utils.Log("Failed to login");
+            return 1;
+        }
+        _account = _account with { AccessToken = loginResult.Value.accessToken };
+
+        await File.WriteAllTextAsync(
+            _accountFile,
+            JsonSerializer.Serialize(_account, SourceGenerationContext.Default.Account),
+            cancellationToken
+        );
+        Utils.SensitiveData.Add(_account.AccessToken);
+        Utils.Log($"Account Vid: {_account.Vid}, AccessToken: {_account.AccessToken}");
+        return 0;
     }
 
     /// <summary>
@@ -55,7 +124,6 @@ public class Commands
     /// <param name="bookId">-i,Book ID</param>
     /// <param name="readTime">-r,Read time in minutes</param>
     /// <param name="speed">-s,Read speed in words per minute</param>
-    /// <param name="configPath">-c, config file path or URL</param>
     /// <param name="mask">-m,Mask sensitive information in logs</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns></returns>
@@ -63,19 +131,12 @@ public class Commands
         int bookId,
         int readTime,
         int speed,
-        string configPath = "config.json",
         bool mask = false,
         CancellationToken cancellationToken = default
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(configPath, cancellationToken);
-        if (account is null)
-        {
-            Utils.Log("Failed to get account");
-            return 1;
-        }
-        using var wereadClient = await CreateWereadClient(account, cancellationToken);
+        var wereadClient = CreateWereadClient();
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
@@ -146,7 +207,7 @@ public class Commands
         }
 
         BookProgressInfo bookProgressInfo = new(
-            appId: account.DeviceId,
+            appId: _account!.DeviceId,
             bookId: bookId.ToString(),
             bookVersion: bookProgress.bookVersion,
             chapterIdx: chapterIdx,
@@ -206,13 +267,7 @@ public class Commands
     )
     {
         Utils.Mask = mask;
-        var account = await GetAccount(configPath, cancellationToken);
-        if (account is null)
-        {
-            Utils.Log("Failed to get account");
-            return 1;
-        }
-        using var wereadClient = await CreateWereadClient(account, cancellationToken);
+        var wereadClient = CreateWereadClient();
         if (wereadClient is null)
         {
             Utils.Log("Failed to create weread client");
@@ -256,81 +311,17 @@ public class Commands
         return 0;
     }
 
-    private async Task<Account?> GetAccount(
-        string configPath,
-        CancellationToken stoppingToken = default
-    )
+    private HttpClient? CreateWereadClient()
     {
-        Account? account = null;
-        if (configPath.StartsWith("http"))
+        if (_account?.AccessToken is null)
         {
-            using var client = _httpClientFactory.CreateClient();
-            var rawContent = await client.GetStringAsync(configPath, stoppingToken);
-            account = JsonSerializer.Deserialize(
-                rawContent,
-                SourceGenerationContext.Default.Account
-            );
-        }
-        else if (File.Exists(configPath))
-        {
-            account = JsonSerializer.Deserialize(
-                await File.ReadAllTextAsync(configPath, stoppingToken),
-                SourceGenerationContext.Default.Account
-            );
-        }
-        if (account is null)
-        {
-            Utils.Log("Failed to get account");
+            Utils.Log("AccessToken is null");
             return null;
         }
-        Utils.SensitiveData.Add(account.RefreshToken);
-        Utils.SensitiveData.Add(account.DeviceId);
-        Utils.SensitiveData.Add(account.Vid.ToString());
-        Utils.Log($"Account Vid: {account.Vid}");
-        return account;
-    }
-
-    private async Task<HttpClient?> CreateWereadClient(
-        Account account,
-        CancellationToken cancellationToken = default
-    )
-    {
-        using var apiClient = _httpClientFactory.CreateClient("api");
-        _ = await apiClient.GetAsync("/", cancellationToken);
-        var signatureResult = await apiClient.GetFromJsonAsync(
-            $"/generation/signature?deviceId={account.DeviceId}",
-            SourceGenerationContext.Default.SignatureResponse,
-            cancellationToken
-        );
-        if (!signatureResult.IsSuccessStatusCode || signatureResult.Value is null)
-        {
-            Utils.Log("Failed to get signature");
-            return null;
-        }
+        Utils.SensitiveData.Add(_account.AccessToken);
         var wereadClient = _httpClientFactory.CreateClient("weread");
-        var loginContent = new LoginRequest(
-            deviceId: account.DeviceId,
-            deviceName: Device.Name,
-            random: signatureResult.Value.Random,
-            refreshToken: account.RefreshToken,
-            signature: signatureResult.Value.Signature,
-            timestamp: signatureResult.Value.Timestamp
-        );
-        var loginResult = await wereadClient.PostAsJsonAsync(
-            "/login",
-            loginContent,
-            SourceGenerationContext.Default.LoginRequest,
-            SourceGenerationContext.Default.LoginResponse,
-            cancellationToken
-        );
-        if (!loginResult.IsSuccessStatusCode || loginResult.Value?.accessToken is null)
-        {
-            Utils.Log("Failed to login");
-            return null;
-        }
-        var loginResponse = loginResult.Value;
-        wereadClient.DefaultRequestHeaders.Add("accesstoken", loginResponse.accessToken);
-        wereadClient.DefaultRequestHeaders.Add("vid", loginResponse.vid.ToString());
+        wereadClient.DefaultRequestHeaders.Add("accesstoken", _account.AccessToken);
+        wereadClient.DefaultRequestHeaders.Add("vid", _account.Vid.ToString());
         return wereadClient;
     }
 }
@@ -359,7 +350,7 @@ public class Commands
 )]
 internal partial class SourceGenerationContext : JsonSerializerContext { }
 
-public record Account(int Vid, string RefreshToken, string DeviceId);
+public record Account(int Vid, string RefreshToken, string DeviceId, string? AccessToken);
 
 public record SimpleResponse(int succ);
 

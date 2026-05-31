@@ -2,7 +2,7 @@ name: WeRead Auto Check-in
 
 on:
   schedule:
-    - cron: '0 8 * * *'
+    - cron: "0 8 * * *"
   workflow_dispatch:
 
 jobs:
@@ -10,37 +10,41 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download Release
-      run: |
-        mkdir -p bin
-        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/weread-checkin-linux-x64.zip"
-        unzip -o bin/app.zip -d bin
-        chmod +x bin/app
+      - name: Download Release
+        run: |
+          mkdir -p bin
+          curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/weread-checkin-linux-x64.zip"
+          unzip -o bin/app.zip -d bin
+          chmod +x bin/app
+          curl -L -o bin/account.json "${{ secrets.CONFIG_PATH }}"
 
-    - name: Generate random parameters
-      id: random
-      run: |
-        READ_TIME=$((5 + RANDOM % 10))
-        SPEED=$((120 + RANDOM % 61))
+      - name: Generate random parameters
+        id: random
+        run: |
+          READ_TIME=$((5 + RANDOM % 10))
+          SPEED=$((120 + RANDOM % 61))
 
-        echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
-        echo "speed=$SPEED" >> $GITHUB_OUTPUT
-        echo "day=$(date +%u)" >> $GITHUB_OUTPUT
+          echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
+          echo "speed=$SPEED" >> $GITHUB_OUTPUT
+          echo "day=$(date +%u)" >> $GITHUB_OUTPUT
 
-    - name: Run WeRead Check-in
-      working-directory: bin
-      run: |
-        ./app checkin \
-          -i ${{ secrets.BOOK_ID }} \
-          -r ${{ steps.random.outputs.readTime }} \
-          -s ${{ steps.random.outputs.speed }} \
-          -c ${{ secrets.CONFIG_PATH }} \
-          -m
-        
-    - name: Run WeRead Gain
-      if: steps.random.outputs.day == '7'
-      working-directory: bin
-      run: |
-        ./app gain \
-          -c ${{ secrets.CONFIG_PATH }} \
-          -m
+      - name: Run WeRead Refresh
+        working-directory: bin
+        run: |
+          ./app refresh -m
+
+      - name: Run WeRead Check-in
+        working-directory: bin
+        run: |
+          ./app checkin \
+            -i ${{ secrets.BOOK_ID }} \
+            -r ${{ steps.random.outputs.readTime }} \
+            -s ${{ steps.random.outputs.speed }} \
+            -m
+
+      - name: Run WeRead Gain
+        if: steps.random.outputs.day == '7'
+        working-directory: bin
+        run: |
+          ./app gain \
+            -m

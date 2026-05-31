@@ -8,54 +8,58 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Download Release
-      run: |
-        mkdir -p bin
-        curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/weread-checkin-linux-x64.zip"
-        unzip -o bin/app.zip -d bin
-        chmod +x bin/app
+      - name: Download Release
+        run: |
+          mkdir -p bin
+          curl -L -o bin/app.zip "https://github.com/chieeh/WereadCheckin/releases/latest/download/weread-checkin-linux-x64.zip"
+          unzip -o bin/app.zip -d bin
+          chmod +x bin/app
+          curl -L -o bin/account.json "${{ secrets.CONFIG_PATH2 }}"
 
-    - name: Generate random parameters
-      id: random
-      run: |
-        READ_TIME=$((40 + RANDOM % 10))
-        SPEED=$((50 + RANDOM % 60))
+      - name: Generate random parameters
+        id: random
+        run: |
+          READ_TIME=$((40 + RANDOM % 10))
+          SPEED=$((50 + RANDOM % 60))
 
-        echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
-        echo "speed=$SPEED" >> $GITHUB_OUTPUT
-        echo "day=$(date +%u)" >> $GITHUB_OUTPUT
+          echo "readTime=$READ_TIME" >> $GITHUB_OUTPUT
+          echo "speed=$SPEED" >> $GITHUB_OUTPUT
+          echo "day=$(date +%u)" >> $GITHUB_OUTPUT
 
-    - name: Run WeRead Check-in
-      uses: nick-fields/retry@v4.0.0
-      with:
-       timeout_minutes: 10
-       max_attempts: 3
-       command: |
-        cd bin && ./app checkin \
-          -i ${{ secrets.BOOK_ID }} \
-          -r ${{ steps.random.outputs.readTime }} \
-          -s ${{ steps.random.outputs.speed }} \
-          -c ${{ secrets.CONFIG_PATH2 }} \
-          -m
-        
-    - name: Run WeRead Gain
-      if: steps.random.outputs.day == '7'
-      working-directory: bin
-      run: |
-        ./app gain \
-          -c ${{ secrets.CONFIG_PATH2 }} \
-          -m
+      - name: Run WeRead Refresh
+        working-directory: bin
+        run: |
+          ./app refresh -m
 
-    - name: Telegram Notify
-      if: always()
-      uses: appleboy/telegram-action@v1.0.1
-      with:
-        to: ${{ secrets.CHAT_ID }}
-        token: ${{ secrets.BOT_TOKEN }}
-        message: |
-          📚 微信读书签到完成
-          
-          状态：${{ job.status }}
-          书籍 ID: ${{ secrets.BOOK_ID }}
-          阅读时长：${{ steps.random.outputs.readTime }} 分钟
-          阅读速度：${{ steps.random.outputs.speed }} 字/分钟
+      - name: Run WeRead Check-in
+        uses: nick-fields/retry@v4.0.0
+        with:
+          timeout_minutes: 10
+          max_attempts: 3
+          command: |
+            cd bin && ./app checkin \
+              -i ${{ secrets.BOOK_ID }} \
+              -r ${{ steps.random.outputs.readTime }} \
+              -s ${{ steps.random.outputs.speed }} \
+              -m
+
+      - name: Run WeRead Gain
+        if: steps.random.outputs.day == '7'
+        working-directory: bin
+        run: |
+          ./app gain \
+            -m
+
+      - name: Telegram Notify
+        if: always()
+        uses: appleboy/telegram-action@v1.0.1
+        with:
+          to: ${{ secrets.CHAT_ID }}
+          token: ${{ secrets.BOT_TOKEN }}
+          message: |
+            📚 微信读书签到完成
+
+            状态：${{ job.status }}
+            书籍 ID: ${{ secrets.BOOK_ID }}
+            阅读时长：${{ steps.random.outputs.readTime }} 分钟
+            阅读速度：${{ steps.random.outputs.speed }} 字/分钟

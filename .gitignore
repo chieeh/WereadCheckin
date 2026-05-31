@@ -50,3 +50,5 @@ cmake-build-*/
 
 # IntelliJ build output
 out/
+
+account.json
