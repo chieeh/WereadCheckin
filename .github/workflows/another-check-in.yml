@@ -48,6 +48,7 @@ jobs:
         working-directory: bin
         run: |
           ./app gain \
+            -t 2 \
             -m
 
       - name: Telegram Notify
