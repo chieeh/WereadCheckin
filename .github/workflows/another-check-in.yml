@@ -44,6 +44,7 @@ jobs:
               -m
 
       - name: Run WeRead Gain
+        if: steps.random.outputs.day == '7'
         working-directory: bin
         run: |
           ./app gain \
